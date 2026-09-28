@@ -1,0 +1,10 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@layer utilities {
+  .touch-none-select {
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}

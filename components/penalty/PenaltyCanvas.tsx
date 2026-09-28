@@ -50,6 +50,18 @@ interface SparkParticle {
   life: number;
 }
 
+interface GrassBitParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  color: string;
+  rotation: number;
+  vRot: number;
+  life: number;
+}
+
 interface PenaltyCanvasProps {
   mode: PenaltyMode;
   phase: MatchPhase; // 'shoot' (user attacks) vs 'defend' (user is goalkeeper)
@@ -132,6 +144,25 @@ export const PenaltyCanvas: React.FC<PenaltyCanvasProps> = ({
   const confettiRef = useRef<ConfettiParticle[]>([]);
   const sparksRef = useRef<SparkParticle[]>([]);
   const trailRef = useRef<{ x: number; y: number; size: number; alpha: number }[]>([]);
+  const grassBitsRef = useRef<GrassBitParticle[]>([]);
+  const turfPatternRef = useRef<CanvasPattern | null>(null);
+
+  const spawnGrassBits = useCallback((x: number, y: number) => {
+    const colors = ['#22c55e', '#16a34a', '#15803d', '#84cc16', '#365314', '#4ade80', '#2d5a27', '#451a03'];
+    for (let i = 0; i < 24; i++) {
+      grassBitsRef.current.push({
+        x: x + (Math.random() - 0.5) * 16,
+        y: y + (Math.random() - 0.5) * 8,
+        vx: (Math.random() - 0.5) * 7,
+        vy: -2.2 - Math.random() * 5.5,
+        size: 2 + Math.random() * 3.5,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rotation: Math.random() * Math.PI * 2,
+        vRot: (Math.random() - 0.5) * 12,
+        life: 1.0,
+      });
+    }
+  }, []);
 
   const [announcement, setAnnouncement] = useState<{
     text: string;
@@ -166,6 +197,9 @@ export const PenaltyCanvas: React.FC<PenaltyCanvasProps> = ({
       const speedKmh = Math.round(70 + clampedPower * 48);
 
       sounds.playBallKick(clampedPower);
+      if (canvasRef.current) {
+        spawnGrassBits(canvasRef.current.width / 2, canvasRef.current.height * 0.88);
+      }
 
       const flightDuration = isChip ? 1.05 : Math.max(0.5, 0.95 - clampedPower * 0.38);
       const vz = 1 / flightDuration;
@@ -219,7 +253,7 @@ export const PenaltyCanvas: React.FC<PenaltyCanvasProps> = ({
         }, delayMs);
       }
     },
-    [goalkeeper, phase]
+    [goalkeeper, phase, spawnGrassBits]
   );
 
   // When external dive is triggered from HUD (Goalkeeper mode)
@@ -269,6 +303,7 @@ export const PenaltyCanvas: React.FC<PenaltyCanvasProps> = ({
     trailRef.current = [];
     confettiRef.current = [];
     sparksRef.current = [];
+    grassBitsRef.current = [];
     targetsRef.current.forEach((t) => (t.hit = false));
 
     const whistleTimer = setTimeout(() => {
@@ -454,51 +489,339 @@ export const PenaltyCanvas: React.FC<PenaltyCanvasProps> = ({
       ctx.fillText(boardText, width / 2, horizonY - 13);
     };
 
+    // Generate ultra-realistic organic turf micro-texture pattern
+    const generateTurfPattern = () => {
+      if (typeof document === 'undefined') return null;
+      const pCanvas = document.createElement('canvas');
+      pCanvas.width = 160;
+      pCanvas.height = 160;
+      const pCtx = pCanvas.getContext('2d');
+      if (!pCtx) return null;
+
+      // Base lush chlorophyll green
+      pCtx.fillStyle = '#15803d';
+      pCtx.fillRect(0, 0, 160, 160);
+
+      const bladeTones = [
+        '#166534',
+        '#14532d',
+        '#15803d',
+        '#16a34a',
+        '#22c55e',
+        '#0f3d1e',
+        '#1e7b3e',
+        '#365314',
+      ];
+
+      let seed = 12345;
+      const rnd = () => {
+        seed = (seed * 16807) % 2147483647;
+        return (seed - 1) / 2147483646;
+      };
+
+      // 2400 micro grass blades with natural organic slant
+      for (let i = 0; i < 2400; i++) {
+        const x = rnd() * 160;
+        const y = rnd() * 160;
+        const len = 2.5 + rnd() * 4.5;
+        const angle = -Math.PI / 2 + (rnd() - 0.5) * 0.55;
+        const color = bladeTones[Math.floor(rnd() * bladeTones.length)];
+
+        pCtx.strokeStyle = color;
+        pCtx.lineWidth = 0.9 + rnd() * 0.7;
+        pCtx.beginPath();
+        pCtx.moveTo(x, y);
+        pCtx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+        pCtx.stroke();
+      }
+
+      // Micro flecks for natural soil and dew speckles
+      for (let j = 0; j < 350; j++) {
+        const fx = rnd() * 160;
+        const fy = rnd() * 160;
+        pCtx.fillStyle = rnd() > 0.4 ? 'rgba(74, 222, 128, 0.16)' : 'rgba(5, 30, 12, 0.18)';
+        pCtx.fillRect(fx, fy, 1.5, 1.5);
+      }
+
+      return ctx.createPattern(pCanvas, 'repeat');
+    };
+
+    // Foreground 3D grass blades for immersive field depth
+    const renderForegroundGrassBlades = (width: number, height: number) => {
+      ctx.save();
+      const bladeColors = [
+        '#15803d',
+        '#166534',
+        '#16a34a',
+        '#22c55e',
+        '#14532d',
+        '#156d35',
+        '#4ade80',
+        '#365314',
+      ];
+      ctx.lineCap = 'round';
+
+      const count = 180;
+      for (let b = 0; b < count; b++) {
+        const bx = (b / count) * width + ((b * 47) % 19) - 9;
+        const by = height - ((b * 31) % 45);
+        const bladeH = 10 + ((b * 53) % 18);
+        const bend = ((b % 5) - 2) * 4;
+        const color = bladeColors[b % bladeColors.length];
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.quadraticCurveTo(bx + bend * 0.5, by - bladeH * 0.6, bx + bend, by - bladeH);
+        ctx.stroke();
+      }
+      ctx.restore();
+    };
+
     const renderPitch = (width: number, height: number) => {
       const horizonY = height * 0.42;
+      const pitchHeight = height - horizonY;
 
+      // 1. Base Rich Emerald Pitch Gradient (Natural daylight / floodlit stadium lawn)
       const grassGrad = ctx.createLinearGradient(0, horizonY, 0, height);
-      grassGrad.addColorStop(0, '#15803d');
-      grassGrad.addColorStop(1, '#166534');
+      grassGrad.addColorStop(0, '#0a2e16');   // Far distance: atmospheric dark turf
+      grassGrad.addColorStop(0.18, '#0f4422');
+      grassGrad.addColorStop(0.45, '#135c2e'); // Midfield: deep chlorophyll
+      grassGrad.addColorStop(0.75, '#157038');
+      grassGrad.addColorStop(1, '#115026');   // Foreground: rich deep emerald
       ctx.fillStyle = grassGrad;
-      ctx.fillRect(0, horizonY, width, height - horizonY);
+      ctx.fillRect(0, horizonY, width, pitchHeight);
 
-      const stripes = 12;
+      // 2. High-Resolution Procedural Turf Pattern (Micro-fibers & blade texture)
+      if (!turfPatternRef.current) {
+        turfPatternRef.current = generateTurfPattern();
+      }
+      if (turfPatternRef.current) {
+        ctx.save();
+        ctx.globalAlpha = 0.38;
+        ctx.fillStyle = turfPatternRef.current;
+        ctx.fillRect(0, horizonY, width, pitchHeight);
+        ctx.restore();
+      }
+
+      // 3. 3D Perspective Mowing Bands (Stripes with authentic physical light reflection)
+      const stripes = 14;
       for (let i = 0; i < stripes; i++) {
+        const t1 = Math.pow(i / stripes, 2.15);
+        const t2 = Math.pow((i + 1) / stripes, 2.15);
+        const y1 = horizonY + t1 * pitchHeight;
+        const y2 = horizonY + t2 * pitchHeight;
+        const stripeH = y2 - y1;
+
         if (i % 2 === 0) {
-          const y1 = horizonY + Math.pow(i / stripes, 2.2) * (height - horizonY);
-          const y2 = horizonY + Math.pow((i + 1) / stripes, 2.2) * (height - horizonY);
-          ctx.fillStyle = 'rgba(21, 128, 61, 0.35)';
-          ctx.fillRect(0, y1, width, y2 - y1);
+          // Light Stripe: Grass blades pressed away from camera, reflecting floodlight sheen
+          const stripeGrad = ctx.createLinearGradient(0, y1, 0, y2);
+          stripeGrad.addColorStop(0, 'rgba(34, 197, 94, 0.22)');
+          stripeGrad.addColorStop(0.5, 'rgba(74, 222, 128, 0.30)');
+          stripeGrad.addColorStop(1, 'rgba(34, 197, 94, 0.22)');
+          ctx.fillStyle = stripeGrad;
+          ctx.fillRect(0, y1, width, stripeH);
+
+          // Realistic roller ridge highlight on the top edge of light stripe
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+          ctx.fillRect(0, y1, width, Math.max(1, stripeH * 0.08));
+        } else {
+          // Dark Stripe: Grass blades pressed toward camera, absorbing ambient light
+          const darkGrad = ctx.createLinearGradient(0, y1, 0, y2);
+          darkGrad.addColorStop(0, 'rgba(5, 40, 18, 0.28)');
+          darkGrad.addColorStop(0.5, 'rgba(2, 28, 12, 0.35)');
+          darkGrad.addColorStop(1, 'rgba(5, 40, 18, 0.28)');
+          ctx.fillStyle = darkGrad;
+          ctx.fillRect(0, y1, width, stripeH);
+
+          // Subtle shadow seam
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+          ctx.fillRect(0, y1, width, Math.max(1, stripeH * 0.06));
         }
       }
 
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
-      ctx.lineWidth = 3;
+      // 4. Subtle Cross-Mowing Sheen (Diamond pattern characteristic of world-class stadiums)
+      ctx.save();
+      ctx.globalAlpha = 0.035;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 18;
+      const diagStep = 70;
+      for (let d = -width; d < width * 2; d += diagStep) {
+        ctx.beginPath();
+        ctx.moveTo(d, horizonY);
+        ctx.lineTo(d + pitchHeight * 0.8, height);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = '#000000';
+      for (let d = width * 2; d > -width; d -= diagStep) {
+        ctx.beginPath();
+        ctx.moveTo(d, horizonY);
+        ctx.lineTo(d - pitchHeight * 0.8, height);
+        ctx.stroke();
+      }
+      ctx.restore();
 
-      // Goal line
+      // 5. Stadium Floodlight Ground Pools (Dewy specular reflection)
+      const lightCols = [width * 0.12, width * 0.28, width * 0.72, width * 0.88];
+      lightCols.forEach((lx) => {
+        const poolGrad = ctx.createRadialGradient(
+          lx,
+          horizonY + pitchHeight * 0.38,
+          10,
+          lx,
+          horizonY + pitchHeight * 0.45,
+          width * 0.32
+        );
+        poolGrad.addColorStop(0, 'rgba(240, 253, 250, 0.14)');
+        poolGrad.addColorStop(0.4, 'rgba(167, 243, 208, 0.06)');
+        poolGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = poolGrad;
+        ctx.beginPath();
+        ctx.ellipse(lx, horizonY + pitchHeight * 0.42, width * 0.28, pitchHeight * 0.35, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // 6. Natural Turf Wear / Scuffed Grass:
+      // A. Goalkeeper's crease wear along the goal line
       const goalLineY = height * 0.52;
+      const goalCreaseGrad = ctx.createRadialGradient(
+        width / 2,
+        goalLineY + 4,
+        8,
+        width / 2,
+        goalLineY + 6,
+        width * 0.22
+      );
+      goalCreaseGrad.addColorStop(0, 'rgba(64, 50, 28, 0.22)');
+      goalCreaseGrad.addColorStop(0.6, 'rgba(40, 58, 30, 0.12)');
+      goalCreaseGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = goalCreaseGrad;
       ctx.beginPath();
-      ctx.moveTo(width * 0.1, goalLineY);
-      ctx.lineTo(width * 0.9, goalLineY);
-      ctx.stroke();
+      ctx.ellipse(width / 2, goalLineY + 6, width * 0.22, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
 
-      // Penalty box lines
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(width * 0.28, goalLineY);
-      ctx.lineTo(width * 0.22, height * 0.62);
-      ctx.lineTo(width * 0.78, height * 0.62);
-      ctx.lineTo(width * 0.72, goalLineY);
-      ctx.stroke();
-
-      // Penalty spot
+      // B. Penalty spot stud wear patch (natural blended soil under boots)
       const penaltySpotX = width / 2;
       const penaltySpotY = height * 0.88;
-      ctx.fillStyle = '#ffffff';
+      const spotWearGrad = ctx.createRadialGradient(
+        penaltySpotX,
+        penaltySpotY,
+        4,
+        penaltySpotX,
+        penaltySpotY,
+        36
+      );
+      spotWearGrad.addColorStop(0, 'rgba(78, 54, 28, 0.32)');
+      spotWearGrad.addColorStop(0.5, 'rgba(45, 60, 32, 0.18)');
+      spotWearGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = spotWearGrad;
       ctx.beginPath();
-      ctx.ellipse(penaltySpotX, penaltySpotY, 8, 4, 0, 0, Math.PI * 2);
+      ctx.ellipse(penaltySpotX, penaltySpotY, 36, 16, 0, 0, Math.PI * 2);
       ctx.fill();
+
+      // 7. Pitch Markings with Authentic Lime/Chalk Texture and 3D Perspective
+      const drawChalkLine = (
+        x1: number,
+        y1: number,
+        x2: number,
+        y2: number,
+        widthNear: number
+      ) => {
+        // Pass 1: Soft chalk powder glow
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+        ctx.lineWidth = widthNear + 3;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+
+        // Pass 2: Solid core chalk
+        ctx.strokeStyle = 'rgba(248, 250, 252, 0.92)';
+        ctx.lineWidth = widthNear;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      };
+
+      // Goal Line (Linha de Fundo / Gol)
+      drawChalkLine(width * 0.06, goalLineY, width * 0.94, goalLineY, 3.2);
+
+      // Pequena Área (Goal Area / 6-yard box)
+      const sixYardTopY = goalLineY;
+      const sixYardBotY = height * 0.585;
+      const sixYardTopL = width * 0.34;
+      const sixYardTopR = width * 0.66;
+      const sixYardBotL = width * 0.31;
+      const sixYardBotR = width * 0.69;
+
+      drawChalkLine(sixYardTopL, sixYardTopY, sixYardBotL, sixYardBotY, 2.5);
+      drawChalkLine(sixYardTopR, sixYardTopY, sixYardBotR, sixYardBotY, 2.5);
+      drawChalkLine(sixYardBotL, sixYardBotY, sixYardBotR, sixYardBotY, 2.8);
+
+      // Grande Área (Penalty Area / 18-yard box)
+      const eighteenTopY = goalLineY;
+      const eighteenBotY = height * 0.72;
+      const eighteenTopL = width * 0.20;
+      const eighteenTopR = width * 0.80;
+      const eighteenBotL = width * 0.12;
+      const eighteenBotR = width * 0.88;
+
+      drawChalkLine(eighteenTopL, eighteenTopY, eighteenBotL, eighteenBotY, 3.0);
+      drawChalkLine(eighteenTopR, eighteenTopY, eighteenBotR, eighteenBotY, 3.0);
+      drawChalkLine(eighteenBotL, eighteenBotY, eighteenBotR, eighteenBotY, 3.5);
+
+      // A Meia-Lua (Penalty Arc / D-Arc)
+      // Radius ~120px in perspective, only drawn above eighteenBotY!
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, height * 0.60, width, eighteenBotY - height * 0.60);
+      ctx.clip();
+
+      // Outer glow for chalk arc
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.ellipse(penaltySpotX, penaltySpotY, 120, 52, 0, Math.PI + 0.25, 2 * Math.PI - 0.25);
+      ctx.stroke();
+
+      // Crisp chalk arc
+      ctx.strokeStyle = 'rgba(248, 250, 252, 0.92)';
+      ctx.lineWidth = 3.2;
+      ctx.beginPath();
+      ctx.ellipse(penaltySpotX, penaltySpotY, 120, 52, 0, Math.PI + 0.25, 2 * Math.PI - 0.25);
+      ctx.stroke();
+      ctx.restore();
+
+      // Penalty Spot (Marca da Cal): realistic perspective chalk disc
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.beginPath();
+      ctx.ellipse(penaltySpotX, penaltySpotY, 11, 5.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Solid chalk core
+      ctx.fillStyle = '#f8fafc';
+      ctx.beginPath();
+      ctx.ellipse(penaltySpotX, penaltySpotY, 7.5, 3.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 8. Foreground 3D Grass Blades (Micro-tufts along bottom border)
+      renderForegroundGrassBlades(width, height);
+
+      // 9. Camera Vignette (Atmospheric corner shading)
+      const vigGradLeft = ctx.createRadialGradient(0, height, 10, 0, height, width * 0.35);
+      vigGradLeft.addColorStop(0, 'rgba(2, 6, 23, 0.45)');
+      vigGradLeft.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = vigGradLeft;
+      ctx.fillRect(0, height * 0.7, width * 0.35, height * 0.3);
+
+      const vigGradRight = ctx.createRadialGradient(width, height, 10, width, height, width * 0.35);
+      vigGradRight.addColorStop(0, 'rgba(2, 6, 23, 0.45)');
+      vigGradRight.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = vigGradRight;
+      ctx.fillRect(width * 0.65, height * 0.7, width * 0.35, height * 0.3);
     };
 
     const renderGoal = (width: number, height: number) => {
@@ -581,6 +904,13 @@ export const PenaltyCanvas: React.FC<PenaltyCanvasProps> = ({
       ctx.lineTo(goalRight + 2, goalTop - 2);
       ctx.lineTo(goalRight + 2, goalBottom);
       ctx.stroke();
+
+      // Sombra de contato das traves no gramado
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.beginPath();
+      ctx.ellipse(goalLeft, goalBottom + 2, 9, 4, 0, 0, Math.PI * 2);
+      ctx.ellipse(goalRight, goalBottom + 2, 9, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
     };
 
     const renderArcadeTargets = (width: number, height: number) => {
@@ -1002,11 +1332,24 @@ export const PenaltyCanvas: React.FC<PenaltyCanvasProps> = ({
       }
       ctx.globalAlpha = 1.0;
 
-      // Ball shadow on grass
+      // Realistic stadium multi-floodlight ball shadow on turf
       const groundY = penaltySpotY + (goalBottom - penaltySpotY) * z;
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      const shadowSpread = 1 + z * 0.5;
+
+      // Main contact shadow
+      ctx.fillStyle = `rgba(5, 20, 10, ${Math.max(0.15, 0.55 - z * 0.3)})`;
       ctx.beginPath();
-      ctx.ellipse(screenX, groundY, ballRadius * 1.1, ballRadius * 0.4, 0, 0, Math.PI * 2);
+      ctx.ellipse(screenX, groundY, ballRadius * 1.15 * shadowSpread, ballRadius * 0.38 * shadowSpread, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Floodlight left & right soft directional shadow lobes
+      ctx.fillStyle = `rgba(5, 20, 10, ${Math.max(0.06, 0.22 - z * 0.15)})`;
+      ctx.beginPath();
+      ctx.ellipse(screenX - 8 * (1 - z), groundY, ballRadius * 1.1 * shadowSpread, ballRadius * 0.3 * shadowSpread, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.ellipse(screenX + 8 * (1 - z), groundY, ballRadius * 1.1 * shadowSpread, ballRadius * 0.3 * shadowSpread, 0.2, 0, Math.PI * 2);
       ctx.fill();
 
       // Render 3D Soccer Ball
@@ -1049,6 +1392,39 @@ export const PenaltyCanvas: React.FC<PenaltyCanvasProps> = ({
       ctx.arc(0, 0, ballRadius, 0, Math.PI * 2);
       ctx.fill();
 
+      ctx.restore();
+
+      // If ball is resting on the penalty spot, draw foreground grass blades overlapping its base
+      if (!ball.isKicked) {
+        renderBallGrassTuck(penaltySpotX, penaltySpotY, ballRadius);
+      }
+    };
+
+    // Grass blades slightly overlapping base of resting ball
+    const renderBallGrassTuck = (bx: number, by: number, r: number) => {
+      ctx.save();
+      const bladeColors = ['#15803d', '#16a34a', '#22c55e', '#14532d', '#4ade80', '#166534'];
+      const blades = [
+        { dx: -20, h: 9, bend: -3, col: 0 },
+        { dx: -14, h: 13, bend: -2, col: 1 },
+        { dx: -8, h: 10, bend: -1, col: 2 },
+        { dx: -2, h: 12, bend: 1, col: 3 },
+        { dx: 4, h: 14, bend: 2, col: 4 },
+        { dx: 11, h: 11, bend: 3, col: 1 },
+        { dx: 17, h: 13, bend: 2, col: 2 },
+        { dx: 22, h: 8, bend: 4, col: 5 },
+      ];
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+      blades.forEach((b) => {
+        const rootX = bx + b.dx;
+        const rootY = by + r * 0.88;
+        ctx.strokeStyle = bladeColors[b.col];
+        ctx.beginPath();
+        ctx.moveTo(rootX, rootY);
+        ctx.quadraticCurveTo(rootX + b.bend * 0.5, rootY - b.h * 0.6, rootX + b.bend, rootY - b.h);
+        ctx.stroke();
+      });
       ctx.restore();
     };
 
@@ -1198,6 +1574,32 @@ export const PenaltyCanvas: React.FC<PenaltyCanvasProps> = ({
       ctx.globalAlpha = 1.0;
     };
 
+    const renderGrassBits = (dt: number) => {
+      const bits = grassBitsRef.current;
+      for (let i = bits.length - 1; i >= 0; i--) {
+        const p = bits[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 8.5 * dt;
+        p.rotation += p.vRot * dt;
+        p.life -= dt * 1.4;
+
+        if (p.life <= 0) {
+          bits.splice(i, 1);
+          continue;
+        }
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = Math.min(1.0, p.life * 1.5);
+        ctx.fillRect(-p.size * 0.4, -p.size * 1.2, p.size * 0.8, p.size * 2.2);
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1.0;
+    };
+
     const loop = (time: number) => {
       const dt = Math.min((time - lastTime) / 1000, 0.08);
       lastTime = time;
@@ -1220,6 +1622,7 @@ export const PenaltyCanvas: React.FC<PenaltyCanvasProps> = ({
       renderPlayerGloves(width, height);
       renderConfetti(height);
       renderSparks();
+      renderGrassBits(dt);
 
       animationFrameId = requestAnimationFrame(loop);
     };

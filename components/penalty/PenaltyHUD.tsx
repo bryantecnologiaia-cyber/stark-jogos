@@ -193,6 +193,7 @@ export const PenaltyHUD: React.FC<PenaltyHUDProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
+            suppressHydrationWarning
             onClick={() => {
               sounds.playSelectLetter(0);
               onOpenBallShop();
@@ -200,7 +201,7 @@ export const PenaltyHUD: React.FC<PenaltyHUDProps> = ({
             className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-white font-bold text-xs shadow-md transition-colors cursor-pointer"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Vestiário ({coins} 🪙)</span>
+            <span suppressHydrationWarning>Vestiário ({coins} 🪙)</span>
           </button>
 
           <button

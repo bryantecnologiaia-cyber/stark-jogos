@@ -20,6 +20,7 @@ import {
   loadCampaignProgress,
   saveLevelProgress,
   loadPlayerStats,
+  getInitialStats,
   updatePlayerStats,
   unlockAchievement,
   loadSoundPreference,

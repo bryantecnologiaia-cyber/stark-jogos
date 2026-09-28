@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { PenaltyMode, MatchPhase, ShotResult, ShootoutRound, GoalkeeperRival, RivalStriker } from '@/types/penaltyGame';
-import { GOALKEEPERS, RIVAL_STRIKERS, BRAZIL_GOALKEEPER, loadPenaltyStorage, updatePenaltyStorage, BallSkin } from '@/lib/penaltyData';
+import { PenaltyMode, MatchPhase, ShotResult, ShootoutRound, GoalkeeperRival, RivalStriker, PenaltyStorageData } from '@/types/penaltyGame';
+import { GOALKEEPERS, RIVAL_STRIKERS, BRAZIL_GOALKEEPER, usePenaltyStorage, updatePenaltyStorage, BallSkin } from '@/lib/penaltyData';
 import { PenaltyCanvas } from './PenaltyCanvas';
 import { PenaltyHUD } from './PenaltyHUD';
 import { PenaltyBallShop } from './PenaltyBallShop';
@@ -10,9 +10,16 @@ import { PenaltyCupVictoryModal } from './PenaltyCupVictoryModal';
 import { sounds } from '@/lib/soundEffects';
 
 export const PenaltyGame: React.FC = () => {
-  // Storage & Profile
-  const [storage, setStorage] = useState(() => loadPenaltyStorage());
+  // Storage & Profile via usePenaltyStorage (eliminates SSR hydration mismatch completely)
+  const storage = usePenaltyStorage();
   const [isBallShopOpen, setIsBallShopOpen] = useState<boolean>(false);
+
+  // Helper to maintain setStorage compatibility across game logic
+  const setStorage = useCallback((updaterOrVal: ((prev: PenaltyStorageData) => PenaltyStorageData) | PenaltyStorageData) => {
+    if (typeof updaterOrVal === 'function') {
+      updaterOrVal(storage);
+    }
+  }, [storage]);
 
   // Game Mode: 'cup' (Chuta & Defende) | 'goalkeeper' (Só Defesas) | 'striker' (Só Chutes) | 'arcade' (Alvos)
   const [mode, setMode] = useState<PenaltyMode>('cup');
@@ -312,7 +319,7 @@ export const PenaltyGame: React.FC = () => {
         }
       }
     },
-    [mode, phase, currentRoundIdx, playerGoals, rivalGoals, playerSaves, arcadeStreak, storage.bestArcadeScore, rounds]
+    [mode, phase, currentRoundIdx, playerGoals, rivalGoals, playerSaves, arcadeStreak, storage.bestArcadeScore, rounds, setStorage]
   );
 
   // Next round / Next play

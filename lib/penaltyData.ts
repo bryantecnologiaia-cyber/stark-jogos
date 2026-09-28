@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import { GoalkeeperRival, RivalStriker, PenaltyStorageData } from '@/types/penaltyGame';
 
 export const BRAZIL_GOALKEEPER: GoalkeeperRival = {
@@ -184,6 +185,32 @@ export const BALL_SKINS: BallSkin[] = [
 
 const PENALTY_STORAGE_KEY = 'super_penalti_storage_v2';
 
+const penaltyListeners = new Set<() => void>();
+
+export function subscribePenaltyStorage(callback: () => void): () => void {
+  penaltyListeners.add(callback);
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === PENALTY_STORAGE_KEY) {
+      cachedRaw = null;
+      callback();
+    }
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', onStorage);
+  }
+  return () => {
+    penaltyListeners.delete(callback);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', onStorage);
+    }
+  };
+}
+
+export function notifyPenaltyStorageChange() {
+  cachedRaw = null;
+  penaltyListeners.forEach((fn) => fn());
+}
+
 export function getInitialPenaltyStorage(): PenaltyStorageData {
   return {
     coins: 50,
@@ -197,19 +224,42 @@ export function getInitialPenaltyStorage(): PenaltyStorageData {
   };
 }
 
+const initialPenaltyStorageServer: PenaltyStorageData = getInitialPenaltyStorage();
+let cachedRaw: string | null = null;
+let cachedPenaltyData: PenaltyStorageData = initialPenaltyStorageServer;
+
 export function loadPenaltyStorage(): PenaltyStorageData {
-  if (typeof window === 'undefined') return getInitialPenaltyStorage();
+  if (typeof window === 'undefined') return initialPenaltyStorageServer;
   try {
     const raw = localStorage.getItem(PENALTY_STORAGE_KEY);
-    if (!raw) return getInitialPenaltyStorage();
-    const parsed = JSON.parse(raw);
-    return {
-      ...getInitialPenaltyStorage(),
-      ...parsed,
+    if (raw === cachedRaw && cachedPenaltyData) {
+      return cachedPenaltyData;
+    }
+    cachedRaw = raw;
+    if (!raw) {
+      cachedPenaltyData = initialPenaltyStorageServer;
+      return cachedPenaltyData;
+    }
+    cachedPenaltyData = {
+      ...initialPenaltyStorageServer,
+      ...JSON.parse(raw),
     };
+    return cachedPenaltyData;
   } catch {
-    return getInitialPenaltyStorage();
+    return initialPenaltyStorageServer;
   }
+}
+
+export function getPenaltyServerSnapshot(): PenaltyStorageData {
+  return initialPenaltyStorageServer;
+}
+
+export function usePenaltyStorage(): PenaltyStorageData {
+  return useSyncExternalStore(
+    subscribePenaltyStorage,
+    loadPenaltyStorage,
+    getPenaltyServerSnapshot
+  );
 }
 
 export function savePenaltyStorage(data: PenaltyStorageData) {
@@ -227,5 +277,6 @@ export function updatePenaltyStorage(
   const current = loadPenaltyStorage();
   const next = updater(current);
   savePenaltyStorage(next);
+  notifyPenaltyStorageChange();
   return next;
 }

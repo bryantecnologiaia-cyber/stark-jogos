@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Track, BikeStorageData, BikeGameMode, BikeRaceStats } from '@/types/bikeGame';
 import { TRACKS, BIKES } from '@/lib/bikeData';
-import { loadBikeStorage, saveRaceResult, recordOvertakeStats } from '@/lib/bikeStorage';
+import { loadBikeStorage, getInitialBikeStorage, saveRaceResult, recordOvertakeStats } from '@/lib/bikeStorage';
 import { TrackSelector } from './TrackSelector';
 import { BikeGarage } from './BikeGarage';
 import { BikeRaceCanvas } from './BikeRaceCanvas';
